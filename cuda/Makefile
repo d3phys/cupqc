@@ -28,10 +28,10 @@ speed: \
   test/test_speed1024 \
 
 shared: \
-  lib/libpqcrystals_kyber512_ref.so \
-  lib/libpqcrystals_kyber768_ref.so \
-  lib/libpqcrystals_kyber1024_ref.so \
-  lib/libpqcrystals_fips202_ref.so \
+  lib/libpqcrystals_kyber512_cuda.so \
+  lib/libpqcrystals_kyber768_cuda.so \
+  lib/libpqcrystals_kyber1024_cuda.so \
+  lib/libpqcrystals_fips202_cuda.so \
 
 nistkat: \
 	nistkat/PQCgenKAT_kem512 \
@@ -39,19 +39,19 @@ nistkat: \
 	nistkat/PQCgenKAT_kem1024 \
 
 
-lib/libpqcrystals_fips202_ref.so: fips202.cu fips202.h
+lib/libpqcrystals_fips202_cuda.so: fips202.cu fips202.h
 	mkdir -p lib
 	$(CC) $(CFLAGS) --compiler-options "-shared -fPIC" fips202.cu -o $@
 
-lib/libpqcrystals_kyber512_ref.so: $(SOURCES) $(HEADERS) symmetric-shake.cu fips202.cu fips202.h
+lib/libpqcrystals_kyber512_cuda.so: $(SOURCES) $(HEADERS) symmetric-shake.cu fips202.cu fips202.h
 	mkdir -p lib
 	$(CC) $(CFLAGS) --compiler-options "-shared -fPIC" -DKYBER_K=2 $(SOURCES) fips202.cu symmetric-shake.cu -o $@
 
-lib/libpqcrystals_kyber768_ref.so: $(SOURCES) $(HEADERS) symmetric-shake.cu
+lib/libpqcrystals_kyber768_cuda.so: $(SOURCES) $(HEADERS) symmetric-shake.cu
 	mkdir -p lib
 	$(CC) $(CFLAGS) --compiler-options "-shared -fPIC" -DKYBER_K=3 $(SOURCES) symmetric-shake.cu -o $@
 
-lib/libpqcrystals_kyber1024_ref.so: $(SOURCES) $(HEADERS) symmetric-shake.cu
+lib/libpqcrystals_kyber1024_cuda.so: $(SOURCES) $(HEADERS) symmetric-shake.cu
 	mkdir -p lib
 	$(CC) $(CFLAGS) --compiler-options "-shared -fPIC" -DKYBER_K=4 $(SOURCES) symmetric-shake.cu -o $@
 
