@@ -60,7 +60,7 @@ crypto_kem_keypair_derand(uint8_t *pk,
   }
 }
 
-#define MAX_BLOCK_SIZE 1024
+#define MAX_BLOCK_SIZE 128
 
 /*************************************************
 * Name:        crypto_kem_keypair

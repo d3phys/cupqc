@@ -22,7 +22,7 @@ int pqcrystals_kyber512_cuda_keypair(uint8_t *pk, uint8_t *sk, uint32_t keypair_
 int kyberCudaKeyPairs( uint8_t *pk, uint8_t *sk, const uint8_t *coins, uint32_t keypair_count)
 {
     // Coins are the same
-    uint32_t step = 128;
+    uint32_t step = 128 * 4;
 
     for ( uint32_t i = 0; i < (keypair_count / step); ++i )
     {
