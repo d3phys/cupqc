@@ -1,4 +1,4 @@
-CC = /usr/local/cuda/bin/nvcc
+CC = nvcc
 CFLAGS += -x cu -rdc=true -gencode arch=compute_70,code=sm_70 -O3\
   --compiler-options "-Wall -Wextra \
   -Wshadow -Wpointer-arith -O3 -fomit-frame-pointer -z noexecstack "
