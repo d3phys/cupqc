@@ -355,14 +355,13 @@ KeccakF1600_StatePermute(uint64_t state[25])
 *
 * Arguments:   - uint64_t *s: pointer to Keccak state
 **************************************************/
-static void keccak_init(uint64_t s[25])
+__device__ static void 
+keccak_init(uint64_t s[25])
 {
   unsigned int i;
   for(i=0;i<25;i++)
     s[i] = 0;
 }
-
-#if 0
 
 /*************************************************
 * Name:        keccak_absorb
@@ -377,11 +376,12 @@ static void keccak_init(uint64_t s[25])
 *
 * Returns new position pos in current block
 **************************************************/
-static unsigned int keccak_absorb(uint64_t s[25],
-                                  unsigned int pos,
-                                  unsigned int r,
-                                  const uint8_t *in,
-                                  size_t inlen)
+__device__ static unsigned int 
+keccak_absorb(uint64_t s[25],
+              unsigned int pos,
+              unsigned int r,
+              const uint8_t *in,
+              size_t inlen)
 {
   unsigned int i;
 
@@ -399,8 +399,6 @@ static unsigned int keccak_absorb(uint64_t s[25],
   return i;
 }
 
-#endif
-
 /*************************************************
 * Name:        keccak_finalize
 *
@@ -411,7 +409,8 @@ static unsigned int keccak_absorb(uint64_t s[25],
 *              - unsigned int r: rate in bytes (e.g., 168 for SHAKE128)
 *              - uint8_t p: domain separation byte
 **************************************************/
-static void keccak_finalize(uint64_t s[25], unsigned int pos, unsigned int r, uint8_t p)
+__device__ static void 
+keccak_finalize(uint64_t s[25], unsigned int pos, unsigned int r, uint8_t p)
 {
   s[pos/8] ^= (uint64_t)p << 8*(pos%8);
   s[r/8-1] ^= 1ULL << 63;
@@ -532,13 +531,12 @@ keccak_squeezeblocks(uint8_t *out,
 *
 * Arguments:   - keccak_state *state: pointer to (uninitialized) Keccak state
 **************************************************/
-void shake128_init(keccak_state *state)
+__device__ void 
+shake128_init(keccak_state *state)
 {
   keccak_init(state->s);
   state->pos = 0;
 }
-
-#if 0
 
 /*************************************************
 * Name:        shake128_absorb
@@ -549,7 +547,8 @@ void shake128_init(keccak_state *state)
 *              - const uint8_t *in: pointer to input to be absorbed into s
 *              - size_t inlen: length of input in bytes
 **************************************************/
-void shake128_absorb(keccak_state *state, const uint8_t *in, size_t inlen)
+__device__ void 
+shake128_absorb(keccak_state *state, const uint8_t *in, size_t inlen)
 {
   state->pos = keccak_absorb(state->s, state->pos, SHAKE128_RATE, in, inlen);
 }
@@ -561,7 +560,8 @@ void shake128_absorb(keccak_state *state, const uint8_t *in, size_t inlen)
 *
 * Arguments:   - keccak_state *state: pointer to Keccak state
 **************************************************/
-void shake128_finalize(keccak_state *state)
+__device__ void 
+shake128_finalize(keccak_state *state)
 {
   keccak_finalize(state->s, state->pos, SHAKE128_RATE, 0x1F);
   state->pos = SHAKE128_RATE;
@@ -577,12 +577,11 @@ void shake128_finalize(keccak_state *state)
 *              - size_t outlen : number of bytes to be squeezed (written to output)
 *              - keccak_state *s: pointer to input/output Keccak state
 **************************************************/
-void shake128_squeeze(uint8_t *out, size_t outlen, keccak_state *state)
+__device__ void 
+shake128_squeeze(uint8_t *out, size_t outlen, keccak_state *state)
 {
   state->pos = keccak_squeeze(out, outlen, state->s, state->pos, SHAKE128_RATE);
 }
-
-#endif
 
 /*************************************************
 * Name:        shake128_absorb_once
@@ -625,13 +624,12 @@ shake128_squeezeblocks(uint8_t *out, size_t nblocks, keccak_state *state)
 *
 * Arguments:   - keccak_state *state: pointer to (uninitialized) Keccak state
 **************************************************/
-void shake256_init(keccak_state *state)
+__device__ void 
+shake256_init(keccak_state *state)
 {
   keccak_init(state->s);
   state->pos = 0;
 }
-
-#if 0
 
 /*************************************************
 * Name:        shake256_absorb
@@ -642,12 +640,11 @@ void shake256_init(keccak_state *state)
 *              - const uint8_t *in: pointer to input to be absorbed into s
 *              - size_t inlen: length of input in bytes
 **************************************************/
-void shake256_absorb(keccak_state *state, const uint8_t *in, size_t inlen)
+__device__ void 
+shake256_absorb(keccak_state *state, const uint8_t *in, size_t inlen)
 {
   state->pos = keccak_absorb(state->s, state->pos, SHAKE256_RATE, in, inlen);
 }
-
-#endif
 
 /*************************************************
 * Name:        shake256_finalize
@@ -656,7 +653,8 @@ void shake256_absorb(keccak_state *state, const uint8_t *in, size_t inlen)
 *
 * Arguments:   - keccak_state *state: pointer to Keccak state
 **************************************************/
-void shake256_finalize(keccak_state *state)
+__device__ void 
+shake256_finalize(keccak_state *state)
 {
   keccak_finalize(state->s, state->pos, SHAKE256_RATE, 0x1F);
   state->pos = SHAKE256_RATE;
@@ -712,8 +710,6 @@ shake256_squeezeblocks(uint8_t *out, size_t nblocks, keccak_state *state)
   keccak_squeezeblocks(out, nblocks, state->s, SHAKE256_RATE);
 }
 
-#if 0
-
 /*************************************************
 * Name:        shake128
 *
@@ -724,7 +720,8 @@ shake256_squeezeblocks(uint8_t *out, size_t nblocks, keccak_state *state)
 *              - const uint8_t *in: pointer to input
 *              - size_t inlen: length of input in bytes
 **************************************************/
-void shake128(uint8_t *out, size_t outlen, const uint8_t *in, size_t inlen)
+__device__ void 
+shake128(uint8_t *out, size_t outlen, const uint8_t *in, size_t inlen)
 {
   size_t nblocks;
   keccak_state state;
@@ -736,8 +733,6 @@ void shake128(uint8_t *out, size_t outlen, const uint8_t *in, size_t inlen)
   out += nblocks*SHAKE128_RATE;
   shake128_squeeze(out, outlen, &state);
 }
-
-#endif
 
 /*************************************************
 * Name:        shake256

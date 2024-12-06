@@ -5,7 +5,7 @@ CFLAGS += -x cu -rdc=true -gencode arch=compute_70,code=sm_70 -O3\
 NISTFLAGS += --compiler-options "-Wno-unused-result -O3 -fomit-frame-pointer"
 RM = /bin/rm
 
-SOURCES = kem.cu indcpa.cu polyvec.cu poly.cu ntt.cu cbd.cu reduce.cu verify.c
+SOURCES = kem.cu indcpa.cu polyvec.cu poly.cu ntt.cu cbd.cu reduce.cu verify.cu
 SOURCESKECCAK = $(SOURCES) fips202.cu symmetric-shake.cu
 HEADERS = params.h kem.h indcpa.h polyvec.h poly.h ntt.h cbd.h verify.h symmetric.h
 HEADERSKECCAK = $(HEADERS) fips202.h

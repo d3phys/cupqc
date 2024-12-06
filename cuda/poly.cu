@@ -16,7 +16,8 @@
 *                            (of length KYBER_POLYCOMPRESSEDBYTES)
 *              - const poly *a: pointer to input polynomial
 **************************************************/
-void poly_compress(uint8_t r[KYBER_POLYCOMPRESSEDBYTES], const poly *a)
+__device__ void
+poly_compress(uint8_t r[KYBER_POLYCOMPRESSEDBYTES], const poly *a)
 {
   unsigned int i,j;
   int16_t u;
@@ -80,7 +81,8 @@ void poly_compress(uint8_t r[KYBER_POLYCOMPRESSEDBYTES], const poly *a)
 *              - const uint8_t *a: pointer to input byte array
 *                                  (of length KYBER_POLYCOMPRESSEDBYTES bytes)
 **************************************************/
-void poly_decompress(poly *r, const uint8_t a[KYBER_POLYCOMPRESSEDBYTES])
+__device__ void 
+poly_decompress(poly *r, const uint8_t a[KYBER_POLYCOMPRESSEDBYTES])
 {
   unsigned int i;
 
@@ -149,7 +151,8 @@ poly_tobytes(uint8_t r[KYBER_POLYBYTES], const poly *a)
 *              - const uint8_t *a: pointer to input byte array
 *                                  (of KYBER_POLYBYTES bytes)
 **************************************************/
-void poly_frombytes(poly *r, const uint8_t a[KYBER_POLYBYTES])
+__device__ void 
+poly_frombytes(poly *r, const uint8_t a[KYBER_POLYBYTES])
 {
   unsigned int i;
   for(i=0;i<KYBER_N/2;i++) {
@@ -166,7 +169,8 @@ void poly_frombytes(poly *r, const uint8_t a[KYBER_POLYBYTES])
 * Arguments:   - poly *r: pointer to output polynomial
 *              - const uint8_t *msg: pointer to input message
 **************************************************/
-void poly_frommsg(poly *r, const uint8_t msg[KYBER_INDCPA_MSGBYTES])
+__device__ void 
+poly_frommsg(poly *r, const uint8_t msg[KYBER_INDCPA_MSGBYTES])
 {
   unsigned int i,j;
 
@@ -190,7 +194,8 @@ void poly_frommsg(poly *r, const uint8_t msg[KYBER_INDCPA_MSGBYTES])
 * Arguments:   - uint8_t *msg: pointer to output message
 *              - const poly *a: pointer to input polynomial
 **************************************************/
-void poly_tomsg(uint8_t msg[KYBER_INDCPA_MSGBYTES], const poly *a)
+__device__ void 
+poly_tomsg(uint8_t msg[KYBER_INDCPA_MSGBYTES], const poly *a)
 {
   unsigned int i,j;
   uint32_t t;

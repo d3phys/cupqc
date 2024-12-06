@@ -52,8 +52,6 @@ kyber_shake256_prf(uint8_t *out, size_t outlen, const uint8_t key[KYBER_SYMBYTES
   shake256(out, outlen, extkey, sizeof(extkey));
 }
 
-#if 0
-
 /*************************************************
 * Name:        kyber_shake256_prf
 *
@@ -65,7 +63,7 @@ kyber_shake256_prf(uint8_t *out, size_t outlen, const uint8_t key[KYBER_SYMBYTES
 *              - const uint8_t *key: pointer to the key (of length KYBER_SYMBYTES)
 *              - uint8_t nonce: single-byte nonce (public PRF input)
 **************************************************/
-void
+__device__ void
 kyber_shake256_rkprf(uint8_t out[KYBER_SSBYTES], const uint8_t key[KYBER_SYMBYTES], const uint8_t input[KYBER_CIPHERTEXTBYTES])
 {
   keccak_state s;
@@ -76,5 +74,3 @@ kyber_shake256_rkprf(uint8_t out[KYBER_SSBYTES], const uint8_t key[KYBER_SYMBYTE
   shake256_finalize(&s);
   shake256_squeeze(out, KYBER_SSBYTES, &s);
 }
-
-#endif

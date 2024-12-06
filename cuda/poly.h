@@ -15,19 +15,19 @@ typedef struct{
 } poly;
 
 #define poly_compress KYBER_NAMESPACE(poly_compress)
-void poly_compress(uint8_t r[KYBER_POLYCOMPRESSEDBYTES], const poly *a);
+__device__ void poly_compress(uint8_t r[KYBER_POLYCOMPRESSEDBYTES], const poly *a);
 #define poly_decompress KYBER_NAMESPACE(poly_decompress)
-void poly_decompress(poly *r, const uint8_t a[KYBER_POLYCOMPRESSEDBYTES]);
+__device__ void poly_decompress(poly *r, const uint8_t a[KYBER_POLYCOMPRESSEDBYTES]);
 
 #define poly_tobytes KYBER_NAMESPACE(poly_tobytes)
 __device__ void poly_tobytes(uint8_t r[KYBER_POLYBYTES], const poly *a);
 #define poly_frombytes KYBER_NAMESPACE(poly_frombytes)
-void poly_frombytes(poly *r, const uint8_t a[KYBER_POLYBYTES]);
+__device__ void poly_frombytes(poly *r, const uint8_t a[KYBER_POLYBYTES]);
 
 #define poly_frommsg KYBER_NAMESPACE(poly_frommsg)
-void poly_frommsg(poly *r, const uint8_t msg[KYBER_INDCPA_MSGBYTES]);
+__device__ void poly_frommsg(poly *r, const uint8_t msg[KYBER_INDCPA_MSGBYTES]);
 #define poly_tomsg KYBER_NAMESPACE(poly_tomsg)
-void poly_tomsg(uint8_t msg[KYBER_INDCPA_MSGBYTES], const poly *r);
+__device__ void poly_tomsg(uint8_t msg[KYBER_INDCPA_MSGBYTES], const poly *r);
 
 #define poly_getnoise_eta1 KYBER_NAMESPACE(poly_getnoise_eta1)
 __device__ void poly_getnoise_eta1(poly *r, const uint8_t seed[KYBER_SYMBYTES], uint8_t nonce);

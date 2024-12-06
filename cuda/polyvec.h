@@ -12,14 +12,14 @@ typedef struct{
 } polyvec;
 
 #define polyvec_compress KYBER_NAMESPACE(polyvec_compress)
-void polyvec_compress(uint8_t r[KYBER_POLYVECCOMPRESSEDBYTES], const polyvec *a);
+__device__ void polyvec_compress(uint8_t r[KYBER_POLYVECCOMPRESSEDBYTES], const polyvec *a);
 #define polyvec_decompress KYBER_NAMESPACE(polyvec_decompress)
-void polyvec_decompress(polyvec *r, const uint8_t a[KYBER_POLYVECCOMPRESSEDBYTES]);
+__device__ void polyvec_decompress(polyvec *r, const uint8_t a[KYBER_POLYVECCOMPRESSEDBYTES]);
 
 #define polyvec_tobytes KYBER_NAMESPACE(polyvec_tobytes)
 __device__ void polyvec_tobytes(uint8_t r[KYBER_POLYVECBYTES], const polyvec *a);
 #define polyvec_frombytes KYBER_NAMESPACE(polyvec_frombytes)
-void polyvec_frombytes(polyvec *r, const uint8_t a[KYBER_POLYVECBYTES]);
+__device__ void polyvec_frombytes(polyvec *r, const uint8_t a[KYBER_POLYVECBYTES]);
 
 #define polyvec_ntt KYBER_NAMESPACE(polyvec_ntt)
 __device__ void polyvec_ntt(polyvec *r);
