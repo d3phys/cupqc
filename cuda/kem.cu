@@ -77,6 +77,7 @@ crypto_kem_keypair_derand(uint8_t *pk,
 **************************************************/
 int crypto_kem_keypair(uint8_t *pk,
                        uint8_t *sk,
+                       const uint8_t *coins,
                        uint32_t keypair_count)
 {
   dim3 block_dim (1, 1, 1);
@@ -90,14 +91,6 @@ int crypto_kem_keypair(uint8_t *pk,
     grid_dim.x = ( keypair_count + MAX_BLOCK_SIZE - 1 ) / MAX_BLOCK_SIZE;
   }
 
-  uint8_t coins[2*KYBER_SYMBYTES] = {
-    0xcb, 0x12, 0x61, 0xa8, 0xcf, 0x85, 0xa4, 0x8b, 0x5d, 0x37, 0xc1, 0x00, 0xb6, 0xb0, 0x2c, 0xfb,
-    0x1b, 0x84, 0x78, 0xc6, 0x2f, 0xe1, 0xc7, 0xd0, 0xe2, 0xcc, 0x0b, 0x48, 0xe7, 0xb7, 0xae, 0xfd,
-    0x7f, 0xe1, 0xa8, 0x95, 0xdb, 0xd9, 0x28, 0x88, 0x12, 0xf2, 0x68, 0xc0, 0x84, 0x8e, 0xe0, 0xa6,
-    0x1f, 0xe5, 0xd3, 0x21, 0xbb, 0xcf, 0x6d, 0x3c, 0x98, 0xb5, 0x35, 0xc4, 0x74, 0xae, 0x1a, 0xb0,
-  };
-  // randombytes(coins, 2*KYBER_SYMBYTES);
-
   uint8_t *d_pk = nullptr;
   uint8_t *d_sk = nullptr;
   uint8_t *d_coins = nullptr;
@@ -107,20 +100,10 @@ int crypto_kem_keypair(uint8_t *pk,
   cudaMalloc( &d_coins, keypair_count * 2 * KYBER_SYMBYTES);
   assert( d_pk && d_sk && d_coins);
 
-  // TODO: remove for, instead init memory by one call of cudaMemcpy
-  for (int i = 0; i < keypair_count; i++) {
-    GPU_ASSERT( cudaMemcpy( d_coins + i * 2 * KYBER_SYMBYTES, coins, 2*KYBER_SYMBYTES, cudaMemcpyHostToDevice) );
-  }
+  GPU_ASSERT( cudaMemcpy( d_coins, coins, keypair_count * 2 * KYBER_SYMBYTES, cudaMemcpyHostToDevice) );
 
   printf( "gridDim (%d %d %d), blockDim (%d %d %d)\n", grid_dim.x, grid_dim.y, grid_dim.z, block_dim.x, block_dim.y, block_dim.z);
-
-  #if   (KYBER_K == 2)
-    pqcrystals_kyber512_cuda_keypair_derand<<<grid_dim, block_dim>>>(d_pk, d_sk, d_coins, keypair_count);
-  #elif (KYBER_K == 3)
-    pqcrystals_kyber768_cuda_keypair_derand<<<grid_dim, block_dim>>>(d_pk, d_sk, d_coins, keypair_count);
-  #elif (KYBER_K == 4)
-    pqcrystals_kyber1024_ref_keypair_derand<<<1, 1>>>(d_pk, d_sk, d_coins, keypair_count);
-  #endif
+  crypto_kem_keypair_derand<<<grid_dim, block_dim>>>( d_pk, d_sk, d_coins, keypair_count);
 
   GPU_ASSERT( cudaGetLastError() );
 
@@ -150,26 +133,37 @@ int crypto_kem_keypair(uint8_t *pk,
 **
 * Returns 0 (success)
 **************************************************/
-int crypto_kem_enc_derand(uint8_t *ct,
-                          uint8_t *ss,
-                          const uint8_t *pk,
-                          const uint8_t *coins)
+__device__ void
+crypto_kem_enc_derand(uint8_t *ct,
+                      uint8_t *ss,
+                      const uint8_t *pk,
+                      const uint8_t *coins,
+                      uint32_t keypair_count)
 {
-  uint8_t buf[2*KYBER_SYMBYTES];
-  /* Will contain key, coins */
-  uint8_t kr[2*KYBER_SYMBYTES];
+  const int tid = threadIdx.x;
+  const int block_size = blockDim.x;
+  const int bid = blockIdx.x;
+  const int coins_offset = ( bid * block_size + tid ) * 2 * KYBER_SYMBYTES;
+  const int sk_offset = ( bid * block_size + tid ) * KYBER_SECRETKEYBYTES;
+  const int pk_offset = ( bid * block_size + tid ) * KYBER_PUBLICKEYBYTES;
 
-  memcpy(buf, coins, KYBER_SYMBYTES);
+  if ( bid * block_size + tid < keypair_count )
+  {
+      uint8_t buf[2*KYBER_SYMBYTES];
+      /* Will contain key, coins */
+      uint8_t kr[2*KYBER_SYMBYTES];
 
-  /* Multitarget countermeasure for coins + contributory KEM */
-  hash_h(buf+KYBER_SYMBYTES, pk, KYBER_PUBLICKEYBYTES);
-  hash_g(kr, buf, 2*KYBER_SYMBYTES);
+      memcpy(buf, coins, KYBER_SYMBYTES);
 
-  /* coins are in kr+KYBER_SYMBYTES */
-  indcpa_enc(ct, buf, pk, kr+KYBER_SYMBYTES);
+      /* Multitarget countermeasure for coins + contributory KEM */
+      hash_h(buf+KYBER_SYMBYTES, pk, KYBER_PUBLICKEYBYTES);
+      hash_g(kr, buf, 2*KYBER_SYMBYTES);
 
-  memcpy(ss,kr,KYBER_SYMBYTES);
-  return 0;
+      /* coins are in kr+KYBER_SYMBYTES */
+      indcpa_enc(ct, buf, pk, kr+KYBER_SYMBYTES);
+
+      memcpy(ss,kr,KYBER_SYMBYTES);
+  }
 }
 
 /*************************************************
@@ -244,6 +238,4 @@ int crypto_kem_dec(uint8_t *ss,
 
   return 0;
 }
-
 #endif
-

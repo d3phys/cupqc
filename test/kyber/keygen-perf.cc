@@ -17,7 +17,7 @@ extern "C"
 void randombytes(uint8_t *out, size_t outlen) {}
 }
 
-int pqcrystals_kyber768_cuda_keypair(uint8_t *pk, uint8_t *sk, uint32_t keypair_count);
+int pqcrystals_kyber768_cuda_keypair(uint8_t *pk, uint8_t *sk, const uint8_t *coins, uint32_t keypair_count);
 
 int kyberCudaKeyPairs( uint8_t *pk, uint8_t *sk, const uint8_t *coins, uint32_t keypair_count)
 {
@@ -28,7 +28,7 @@ int kyberCudaKeyPairs( uint8_t *pk, uint8_t *sk, const uint8_t *coins, uint32_t 
     {
         uint8_t* pub = (pk + kyberPublicKeyBytes * i * step);
         uint8_t* sec = (sk + kyberSecretKeyBytes * i * step);
-        pqcrystals_kyber768_cuda_keypair( pub, sec, step);
+        pqcrystals_kyber768_cuda_keypair( pub, sec, coins, step);
     }
 
     return 0;
@@ -74,6 +74,14 @@ int testKeygen()
         0x7f, 0xe1, 0xa8, 0x95, 0xdb, 0xd9, 0x28, 0x88, 0x12, 0xf2, 0x68, 0xc0, 0x84, 0x8e, 0xe0, 0xa6,
         0x1f, 0xe5, 0xd3, 0x21, 0xbb, 0xcf, 0x6d, 0x3c, 0x98, 0xb5, 0x35, 0xc4, 0x74, 0xae, 0x1a, 0xb0,
     };
+    
+    uint8_t* coins = (uint8_t*)malloc(sizeof(keyPairCoins) * nKeys);
+    assert(coins);
+
+    for ( int i = 0; i < nKeys; i++ )
+    {
+        memcpy(coins + i * sizeof(keyPairCoins), keyPairCoins, sizeof(keyPairCoins));    
+    }
 
     // Alice generates a public key
     auto startRef = std::chrono::high_resolution_clock::now();
@@ -81,7 +89,7 @@ int testKeygen()
     auto endRef   = std::chrono::high_resolution_clock::now();
 
     auto startCuda = std::chrono::high_resolution_clock::now();
-    kyberCudaKeyPairs( publicKeysCuda, secretKeysCuda, keyPairCoins, nKeys);
+    kyberCudaKeyPairs( publicKeysCuda, secretKeysCuda, coins, nKeys);
     auto endCuda = std::chrono::high_resolution_clock::now();
 
     std::chrono::duration<double> diffRef = endRef - startRef;
