@@ -45,19 +45,19 @@ int kyber1024EncDeRand(uint8_t *ct, uint8_t *ss, const uint8_t *pk, const uint8_
 int kyber1024Enc(uint8_t *ct, uint8_t *ss, const uint8_t *pk);
 int kyber1024Dec(uint8_t *ss, const uint8_t *ct, const uint8_t *sk);
 
-// Test Kyber512 for now
-#define kyberSecretKeyBytes   kyber512SecretKeyBytes
-#define kyberPublicKeyBytes   kyber512PublicKeyBytes
-#define kyberCipherTextBytes  kyber512CipherTextBytes
-#define kyberKeyPairCoinBytes kyber512KeyPairCoinBytes
-#define kyberEncCoinBytes     kyber512EncCoinBytes
-#define kyberBytes            kyber512Bytes           
+// Test Kyber768 for now
+#define kyberSecretKeyBytes   kyber768SecretKeyBytes
+#define kyberPublicKeyBytes   kyber768PublicKeyBytes
+#define kyberCipherTextBytes  kyber768CipherTextBytes
+#define kyberKeyPairCoinBytes kyber768KeyPairCoinBytes
+#define kyberEncCoinBytes     kyber768EncCoinBytes
+#define kyberBytes            kyber768Bytes           
 
-#define kyberKeyPair          kyber512KeyPair
-#define kyberKeyPairDeRand    kyber512KeyPairDeRand
-#define kyberKeyPair          kyber512KeyPair
-#define kyberEncDeRand        kyber512EncDeRand
-#define kyberEnc              kyber512Enc
-#define kyberDec              kyber512Dec          
+#define kyberKeyPair          kyber768KeyPair
+#define kyberKeyPairDeRand    kyber768KeyPairDeRand
+#define kyberKeyPair          kyber768KeyPair
+#define kyberEncDeRand        kyber768EncDeRand
+#define kyberEnc              kyber768Enc
+#define kyberDec              kyber768Dec          
 
 #endif // KYBER_TEST_API_H

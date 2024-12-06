@@ -117,9 +117,9 @@ int crypto_kem_keypair(uint8_t *pk,
   #if   (KYBER_K == 2)
     pqcrystals_kyber512_cuda_keypair_derand<<<grid_dim, block_dim>>>(d_pk, d_sk, d_coins, keypair_count);
   #elif (KYBER_K == 3)
-    pqcrystals_kyber768_ref_keypair_derand<<<1, 1>>>(d_pk, d_sk, d_coins);
+    pqcrystals_kyber768_cuda_keypair_derand<<<grid_dim, block_dim>>>(d_pk, d_sk, d_coins, keypair_count);
   #elif (KYBER_K == 4)
-    pqcrystals_kyber1024_ref_keypair_derand<<<1, 1>>>(d_pk, d_sk, d_coins);
+    pqcrystals_kyber1024_ref_keypair_derand<<<1, 1>>>(d_pk, d_sk, d_coins, keypair_count);
   #endif
 
   GPU_ASSERT( cudaGetLastError() );

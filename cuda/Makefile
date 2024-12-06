@@ -49,11 +49,11 @@ lib/libpqcrystals_kyber512_cuda.so: $(SOURCES) $(HEADERS) symmetric-shake.cu fip
 
 lib/libpqcrystals_kyber768_cuda.so: $(SOURCES) $(HEADERS) symmetric-shake.cu
 	mkdir -p lib
-	$(CC) $(CFLAGS) --compiler-options "-shared -fPIC" -DKYBER_K=3 $(SOURCES) symmetric-shake.cu -o $@
+	$(CC) $(CFLAGS) --compiler-options "-shared -fPIC" -DKYBER_K=3 $(SOURCES) fips202.cu symmetric-shake.cu -o $@
 
 lib/libpqcrystals_kyber1024_cuda.so: $(SOURCES) $(HEADERS) symmetric-shake.cu
 	mkdir -p lib
-	$(CC) $(CFLAGS) --compiler-options "-shared -fPIC" -DKYBER_K=4 $(SOURCES) symmetric-shake.cu -o $@
+	$(CC) $(CFLAGS) --compiler-options "-shared -fPIC" -DKYBER_K=4 $(SOURCES) fips202.cu symmetric-shake.cu -o $@
 
 test/test_kyber512: $(SOURCESKECCAK) $(HEADERSKECCAK) test/test_kyber.c randombytes.c
 	$(CC) $(CFLAGS) -DKYBER_K=2 $(SOURCESKECCAK) randombytes.c test/test_kyber.c -o $@

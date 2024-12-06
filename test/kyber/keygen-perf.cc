@@ -17,7 +17,7 @@ extern "C"
 void randombytes(uint8_t *out, size_t outlen) {}
 }
 
-int pqcrystals_kyber512_cuda_keypair(uint8_t *pk, uint8_t *sk, uint32_t keypair_count);
+int pqcrystals_kyber768_cuda_keypair(uint8_t *pk, uint8_t *sk, uint32_t keypair_count);
 
 int kyberCudaKeyPairs( uint8_t *pk, uint8_t *sk, const uint8_t *coins, uint32_t keypair_count)
 {
@@ -28,7 +28,7 @@ int kyberCudaKeyPairs( uint8_t *pk, uint8_t *sk, const uint8_t *coins, uint32_t 
     {
         uint8_t* pub = (pk + kyberPublicKeyBytes * i * step);
         uint8_t* sec = (sk + kyberSecretKeyBytes * i * step);
-        pqcrystals_kyber512_cuda_keypair( pub, sec, step);
+        pqcrystals_kyber768_cuda_keypair( pub, sec, step);
     }
 
     return 0;
@@ -52,7 +52,7 @@ int kyberRefKeyPairs( uint8_t *pk, uint8_t *sk, const uint8_t *coins, uint32_t k
     {
         uint8_t* pub = (pk + kyberPublicKeyBytes * i);
         uint8_t* sec = (sk + kyberSecretKeyBytes * i);
-        pqcrystals_kyber512_avx2_keypair_derand( pub, sec, coins);
+        pqcrystals_kyber768_avx2_keypair_derand( pub, sec, coins);
     }
 
     return 0;
