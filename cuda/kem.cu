@@ -3,6 +3,7 @@
 #include <string.h>
 #include <assert.h>
 #include <stdio.h>
+#include <vector>
 #include "params.h"
 #include "kem.h"
 #include "indcpa.h"
@@ -23,7 +24,7 @@ inline void gpuAssert(cudaError_t code, const char *file, int line, bool abort=t
 }
 
 /*************************************************
-* Name:        crypto_kem_keypair_derand
+* Name:        crypto_kem_keypair_kernel
 *
 * Description: Generates public and private key
 *              for CCA-secure Kyber key encapsulation mechanism
@@ -34,33 +35,39 @@ inline void gpuAssert(cudaError_t code, const char *file, int line, bool abort=t
 *                (an already allocated array of KYBER_SECRETKEYBYTES bytes per thread)
 *              - uint8_t *coins: pointer to input randomness
 *                (an already allocated array filled with 2*KYBER_SYMBYTES random bytes per thread)
-**
+*              - uint32_t n_keypair: amount of keys to generate
+*
 * Returns 0 (success)
 **************************************************/
 __global__ void
-crypto_kem_keypair_derand(uint8_t *pk,
+crypto_kem_keypair_kernel(uint8_t *pk,
                           uint8_t *sk,
                           const uint8_t *coins,
-                          uint32_t keypair_count)
+                          uint32_t n_keypair)
 {
   const int tid = threadIdx.x;
   const int block_size = blockDim.x;
   const int bid = blockIdx.x;
-  const int coins_offset = ( bid * block_size + tid ) * 2 * KYBER_SYMBYTES;
-  const int sk_offset = ( bid * block_size + tid ) * KYBER_SECRETKEYBYTES;
-  const int pk_offset = ( bid * block_size + tid ) * KYBER_PUBLICKEYBYTES;
 
-  if ( bid * block_size + tid < keypair_count )
+  const int idx = bid * block_size + tid;
+  uint8_t       *thread_pk    = pk    + idx * KYBER_PUBLICKEYBYTES;
+  uint8_t       *thread_sk    = sk    + idx * KYBER_SECRETKEYBYTES;
+  const uint8_t *thread_coins = coins + idx * 2*KYBER_SYMBYTES;
+
+  if ( idx < n_keypair )
   {
-    indcpa_keypair_derand(pk + pk_offset, sk + sk_offset, coins + coins_offset);
-    memcpy(sk + sk_offset + KYBER_INDCPA_SECRETKEYBYTES, pk + pk_offset, KYBER_PUBLICKEYBYTES);
-    hash_h(sk + sk_offset + KYBER_SECRETKEYBYTES - 2 * KYBER_SYMBYTES, pk + pk_offset, KYBER_PUBLICKEYBYTES);
+    indcpa_keypair_derand(thread_pk, thread_sk, thread_coins);
+    memcpy(thread_sk + KYBER_INDCPA_SECRETKEYBYTES, thread_pk, KYBER_PUBLICKEYBYTES);
+    hash_h(thread_sk + KYBER_SECRETKEYBYTES - 2*KYBER_SYMBYTES, thread_pk, KYBER_PUBLICKEYBYTES);
     /* Value z for pseudo-random output on reject */
-    memcpy(sk + sk_offset + KYBER_SECRETKEYBYTES - KYBER_SYMBYTES, coins + coins_offset + KYBER_SYMBYTES, KYBER_SYMBYTES);
+    memcpy(thread_sk + KYBER_SECRETKEYBYTES - KYBER_SYMBYTES, thread_coins + KYBER_SYMBYTES, KYBER_SYMBYTES);
   }
 }
 
 #define MAX_BLOCK_SIZE 128
+const uint32_t kThreadsPerBlock = 32;
+const uint32_t kBlocksPerGrid = 256;
+const uint32_t kKeysPerGrid = kBlocksPerGrid * kThreadsPerBlock;
 
 /*************************************************
 * Name:        crypto_kem_keypair
@@ -78,37 +85,90 @@ crypto_kem_keypair_derand(uint8_t *pk,
 int crypto_kem_keypair(uint8_t *pk,
                        uint8_t *sk,
                        const uint8_t *coins,
-                       uint32_t keypair_count)
+                       uint32_t n_keypair)
 {
-  dim3 block_dim (1, 1, 1);
-  dim3 grid_dim (1, 1, 1);
-
-  if (keypair_count <= MAX_BLOCK_SIZE) {
-    block_dim.x = keypair_count;
-    grid_dim.x = 1;
-  } else {
-    block_dim.x = MAX_BLOCK_SIZE;
-    grid_dim.x = ( keypair_count + MAX_BLOCK_SIZE - 1 ) / MAX_BLOCK_SIZE;
-  }
+  const uint32_t n_streams = (n_keypair + kKeysPerGrid - 1) / kKeysPerGrid;
+  const uint32_t tail_keypairs = n_keypair % kKeysPerGrid;
 
   uint8_t *d_pk = nullptr;
   uint8_t *d_sk = nullptr;
   uint8_t *d_coins = nullptr;
 
-  cudaMalloc( &d_pk, keypair_count * CRYPTO_PUBLICKEYBYTES);
-  cudaMalloc( &d_sk, keypair_count * CRYPTO_SECRETKEYBYTES);
-  cudaMalloc( &d_coins, keypair_count * 2 * KYBER_SYMBYTES);
+  cudaMalloc( &d_pk, n_keypair * KYBER_PUBLICKEYBYTES);
+  cudaMalloc( &d_sk, n_keypair * KYBER_SECRETKEYBYTES);
+  cudaMalloc( &d_coins, n_keypair * 2 * KYBER_SYMBYTES);
   assert( d_pk && d_sk && d_coins);
 
-  GPU_ASSERT( cudaMemcpy( d_coins, coins, keypair_count * 2 * KYBER_SYMBYTES, cudaMemcpyHostToDevice) );
+  GPU_ASSERT( cudaMemcpy( d_coins, coins, n_keypair * 2 * KYBER_SYMBYTES, cudaMemcpyHostToDevice) );
 
-  printf( "keygen gridDim (%d %d %d), blockDim (%d %d %d)\n", grid_dim.x, grid_dim.y, grid_dim.z, block_dim.x, block_dim.y, block_dim.z);
-  crypto_kem_keypair_derand<<<grid_dim, block_dim>>>( d_pk, d_sk, d_coins, keypair_count);
+  std::vector<cudaStream_t> streams( n_streams);
+  for ( uint32_t i = 0; i < n_streams; i++ )
+  {
+    GPU_ASSERT( cudaStreamCreate( &streams[i]));
+  }
 
-  GPU_ASSERT( cudaGetLastError() );
+  auto getNKeysForGrid = [=]( uint32_t i) -> uint32_t
+  {
+    if ( (tail_keypairs != 0) && (i == n_streams - 1) )
+    {
+      return tail_keypairs;
+    } else {
+      return kKeysPerGrid;
+    }
+  };
 
-  GPU_ASSERT( cudaMemcpy( pk, d_pk, keypair_count * CRYPTO_PUBLICKEYBYTES, cudaMemcpyDeviceToHost) );
-  GPU_ASSERT( cudaMemcpy( sk, d_sk, keypair_count * CRYPTO_SECRETKEYBYTES, cudaMemcpyDeviceToHost) );
+  // Launch all grids in streams.
+  for ( uint32_t i = 0; i < n_streams; i++ )
+  {
+    uint32_t offset = i * kKeysPerGrid;
+    uint32_t n_cur = getNKeysForGrid( i);
+
+    uint8_t *d_grid_pk    = d_pk    + offset * KYBER_PUBLICKEYBYTES;
+    uint8_t *d_grid_sk    = d_sk    + offset * KYBER_SECRETKEYBYTES;
+    uint8_t *d_grid_coins = d_coins + offset * 2*KYBER_SYMBYTES;
+
+    printf( "keygen gridDim (%u), blockDim (%u), stream launch (%u), #keypairs on grid (%u keys), offset (%u keys)\n",
+            kBlocksPerGrid, kThreadsPerBlock, i, n_cur, offset);
+    crypto_kem_keypair_kernel<<<kBlocksPerGrid, kThreadsPerBlock, 0, streams[i]>>>(
+        d_grid_pk,
+        d_grid_sk,
+        d_grid_coins,
+        n_cur
+    );
+  }
+
+  // Launch copy for result of every stream.
+  for ( uint32_t i = 0; i < n_streams; i++ )
+  {
+    uint32_t offset = i * kKeysPerGrid;
+    uint32_t n_cur = getNKeysForGrid( i);
+
+    uint8_t *h_grid_pk = pk   + offset * KYBER_PUBLICKEYBYTES;
+    uint8_t *h_grid_sk = sk   + offset * KYBER_SECRETKEYBYTES;
+    uint8_t *d_grid_pk = d_pk + offset * KYBER_PUBLICKEYBYTES;
+    uint8_t *d_grid_sk = d_sk + offset * KYBER_SECRETKEYBYTES;
+
+    GPU_ASSERT( cudaMemcpyAsync( h_grid_pk,
+                                 d_grid_pk,
+                                 n_cur * KYBER_PUBLICKEYBYTES,
+                                 cudaMemcpyDeviceToHost,
+                                 streams[i]));
+
+    GPU_ASSERT( cudaMemcpyAsync( h_grid_sk,
+                                 d_grid_sk,
+                                 n_cur * KYBER_SECRETKEYBYTES,
+                                 cudaMemcpyDeviceToHost,
+                                 streams[i]));
+  }
+
+  // Wait for all streams.
+  GPU_ASSERT( cudaDeviceSynchronize());
+
+  for ( uint32_t i = 0; i < n_streams; i++ )
+  {
+    GPU_ASSERT( cudaStreamDestroy( streams[i]));
+  }
+
   cudaFree( d_pk);
   cudaFree( d_sk);
   cudaFree( d_coins);
@@ -117,7 +177,7 @@ int crypto_kem_keypair(uint8_t *pk,
 }
 
 /*************************************************
-* Name:        crypto_kem_enc_derand
+* Name:        crypto_kem_enc_kernel
 *
 * Description: Generates cipher text and shared
 *              secret for given public key
@@ -134,11 +194,11 @@ int crypto_kem_keypair(uint8_t *pk,
 * Returns 0 (success)
 **************************************************/
 __global__ void
-crypto_kem_enc_derand(uint8_t *ct,
+crypto_kem_enc_kernel(uint8_t *ct,
                       uint8_t *ss,
                       const uint8_t *pk,
                       const uint8_t *coins,
-                      uint32_t keypair_count)
+                      uint32_t n_keypair)
 {
   const int tid = threadIdx.x;
   const int block_size = blockDim.x;
@@ -148,7 +208,7 @@ crypto_kem_enc_derand(uint8_t *ct,
   const int ct_offset = ( bid * block_size + tid ) * KYBER_INDCPA_BYTES;
   const int ss_offset = ( bid * block_size + tid ) * KYBER_SSBYTES;
 
-  if ( bid * block_size + tid < keypair_count )
+  if ( bid * block_size + tid < n_keypair )
   {
       uint8_t buf[2*KYBER_SYMBYTES];
       /* Will contain key, coins */
@@ -186,40 +246,95 @@ int crypto_kem_enc(uint8_t *ct,
                    uint8_t *ss,
                    const uint8_t *pk,
                    const uint8_t *coins,
-                   uint32_t keypair_count)
+                   uint32_t n_keypair)
 {
-  dim3 block_dim (1, 1, 1);
-  dim3 grid_dim (1, 1, 1);
-
-  if (keypair_count <= MAX_BLOCK_SIZE) {
-    block_dim.x = keypair_count;
-    grid_dim.x = 1;
-  } else {
-    block_dim.x = MAX_BLOCK_SIZE;
-    grid_dim.x = ( keypair_count + MAX_BLOCK_SIZE - 1 ) / MAX_BLOCK_SIZE;
-  }
+  const uint32_t n_streams = (n_keypair + kKeysPerGrid - 1) / kKeysPerGrid;
+  const uint32_t tail_keypairs = n_keypair % kKeysPerGrid;
 
   uint8_t *d_ct = nullptr;
   uint8_t *d_ss = nullptr;
   uint8_t *d_pk = nullptr;
   uint8_t *d_coins = nullptr;
 
-  cudaMalloc( &d_ct, keypair_count * KYBER_CIPHERTEXTBYTES);
-  cudaMalloc( &d_ss, keypair_count * KYBER_SSBYTES);
-  cudaMalloc( &d_pk, keypair_count * KYBER_PUBLICKEYBYTES);
-  cudaMalloc( &d_coins, keypair_count * KYBER_SYMBYTES);
+  cudaMalloc( &d_ct, n_keypair * KYBER_CIPHERTEXTBYTES);
+  cudaMalloc( &d_ss, n_keypair * KYBER_SSBYTES);
+  cudaMalloc( &d_pk, n_keypair * KYBER_PUBLICKEYBYTES);
+  cudaMalloc( &d_coins, n_keypair * KYBER_SYMBYTES);
   assert( d_ct && d_ss && d_pk && d_coins);
 
-  GPU_ASSERT( cudaMemcpy( d_pk, pk, keypair_count * KYBER_PUBLICKEYBYTES, cudaMemcpyHostToDevice) );
-  GPU_ASSERT( cudaMemcpy( d_coins, coins, keypair_count * KYBER_SYMBYTES, cudaMemcpyHostToDevice) );
+  GPU_ASSERT( cudaMemcpy( d_pk, pk, n_keypair * KYBER_PUBLICKEYBYTES, cudaMemcpyHostToDevice) );
+  GPU_ASSERT( cudaMemcpy( d_coins, coins, n_keypair * KYBER_SYMBYTES, cudaMemcpyHostToDevice) );
 
-  printf( "enc gridDim (%d %d %d), blockDim (%d %d %d)\n", grid_dim.x, grid_dim.y, grid_dim.z, block_dim.x, block_dim.y, block_dim.z);
-  crypto_kem_enc_derand<<<grid_dim, block_dim>>>( d_ct, d_ss, d_pk, d_coins, keypair_count);
+  std::vector<cudaStream_t> streams( n_streams);
+  for ( uint32_t i = 0; i < n_streams; i++ )
+  {
+    GPU_ASSERT( cudaStreamCreate( &streams[i]));
+  }
 
-  GPU_ASSERT( cudaGetLastError() );
+  auto getNKeysForGrid = [=]( uint32_t i) -> uint32_t
+  {
+    if ( (tail_keypairs != 0) && (i == n_streams - 1) )
+    {
+      return tail_keypairs;
+    } else {
+      return kKeysPerGrid;
+    }
+  };
 
-  GPU_ASSERT( cudaMemcpy( ct, d_ct, keypair_count * KYBER_CIPHERTEXTBYTES, cudaMemcpyDeviceToHost) );
-  GPU_ASSERT( cudaMemcpy( ss, d_ss, keypair_count * KYBER_SSBYTES, cudaMemcpyDeviceToHost) );
+  // Launch all grids in streams.
+  for ( uint32_t i = 0; i < n_streams; i++ )
+  {
+    uint32_t offset = i * kKeysPerGrid;
+    uint32_t n_cur = getNKeysForGrid( i);
+
+    uint8_t *d_grid_ct    = d_ct    + offset * KYBER_CIPHERTEXTBYTES;
+    uint8_t *d_grid_ss    = d_ss    + offset * KYBER_SSBYTES;
+    uint8_t *d_grid_pk    = d_pk    + offset * KYBER_PUBLICKEYBYTES;
+    uint8_t *d_grid_coins = d_coins + offset * KYBER_SYMBYTES;
+
+    printf( "enc gridDim (%u), blockDim (%u), stream launch (%u), #keys on grid (%u keys), offset (%u keys)\n",
+            kBlocksPerGrid, kThreadsPerBlock, i, n_cur, offset);
+    crypto_kem_enc_kernel<<<kBlocksPerGrid, kThreadsPerBlock, 0, streams[i]>>>(
+        d_grid_ct,
+        d_grid_ss,
+        d_grid_pk,
+        d_grid_coins,
+        n_cur
+    );
+  }
+
+  // Launch copy for result of every stream.
+  for ( uint32_t i = 0; i < n_streams; i++ )
+  {
+    uint32_t offset = i * kKeysPerGrid;
+    uint32_t n_cur = getNKeysForGrid( i);
+
+    uint8_t *h_grid_ct = ct   + offset * KYBER_CIPHERTEXTBYTES;
+    uint8_t *h_grid_ss = ss   + offset * KYBER_SSBYTES;
+    uint8_t *d_grid_ct = d_ct + offset * KYBER_CIPHERTEXTBYTES;
+    uint8_t *d_grid_ss = d_ss + offset * KYBER_SSBYTES;
+
+    GPU_ASSERT( cudaMemcpyAsync( h_grid_ct,
+                                 d_grid_ct,
+                                 n_cur * KYBER_CIPHERTEXTBYTES,
+                                 cudaMemcpyDeviceToHost,
+                                 streams[i]));
+
+    GPU_ASSERT( cudaMemcpyAsync( h_grid_ss,
+                                 d_grid_ss,
+                                 n_cur * KYBER_SSBYTES,
+                                 cudaMemcpyDeviceToHost,
+                                 streams[i]));
+  }
+
+  // Wait for all streams.
+  GPU_ASSERT( cudaDeviceSynchronize());
+
+  for ( uint32_t i = 0; i < n_streams; i++ )
+  {
+    GPU_ASSERT( cudaStreamDestroy( streams[i]));
+  }
+
   cudaFree( d_ct);
   cudaFree( d_ss);
   cudaFree( d_pk);
@@ -229,7 +344,7 @@ int crypto_kem_enc(uint8_t *ct,
 }
 
 /*************************************************
-* Name:        crypto_kem_dec
+* Name:        crypto_kem_dec_kernel
 *
 * Description: Generates shared secret for given
 *              cipher text and private key
@@ -249,9 +364,8 @@ __global__ void
 crypto_kem_dec_kernel(uint8_t *ss,
                       const uint8_t *ct,
                       const uint8_t *sk,
-                      uint32_t keypair_count)
+                      uint32_t n_keypair)
 {
-
   const int tid = threadIdx.x;
   const int block_size = blockDim.x;
   const int bid = blockIdx.x;
@@ -259,7 +373,7 @@ crypto_kem_dec_kernel(uint8_t *ss,
   const int ct_offset = ( bid * block_size + tid ) * KYBER_CIPHERTEXTBYTES;
   const int sk_offset = ( bid * block_size + tid ) * KYBER_SECRETKEYBYTES;
 
-  if ( bid * block_size + tid < keypair_count )
+  if ( bid * block_size + tid < n_keypair )
   {
       int fail;
       uint8_t buf[2*KYBER_SYMBYTES];
@@ -290,37 +404,104 @@ crypto_kem_dec_kernel(uint8_t *ss,
 int crypto_kem_dec(uint8_t *ss,
                    const uint8_t *ct,
                    const uint8_t *sk,
-                   uint32_t keypair_count)
+                   uint32_t n_keypair)
 {
-  dim3 block_dim (1, 1, 1);
-  dim3 grid_dim (1, 1, 1);
-
-  if (keypair_count <= MAX_BLOCK_SIZE) {
-    block_dim.x = keypair_count;
-    grid_dim.x = 1;
-  } else {
-    block_dim.x = MAX_BLOCK_SIZE;
-    grid_dim.x = ( keypair_count + MAX_BLOCK_SIZE - 1 ) / MAX_BLOCK_SIZE;
-  }
+  const uint32_t n_streams = (n_keypair + kKeysPerGrid - 1) / kKeysPerGrid;
+  const uint32_t tail_keypairs = n_keypair % kKeysPerGrid;
 
   uint8_t *d_ss = nullptr;
   uint8_t *d_ct = nullptr;
   uint8_t *d_sk = nullptr;
 
-  cudaMalloc( &d_ss, keypair_count * KYBER_SSBYTES);
-  cudaMalloc( &d_ct, keypair_count * KYBER_CIPHERTEXTBYTES);
-  cudaMalloc( &d_sk, keypair_count * KYBER_SECRETKEYBYTES);
+  cudaMalloc( &d_ss, n_keypair * KYBER_SSBYTES);
+  cudaMalloc( &d_ct, n_keypair * KYBER_CIPHERTEXTBYTES);
+  cudaMalloc( &d_sk, n_keypair * KYBER_SECRETKEYBYTES);
   assert( d_ss && d_ct && d_sk);
 
-  GPU_ASSERT( cudaMemcpy( d_ct, ct, keypair_count * KYBER_CIPHERTEXTBYTES, cudaMemcpyHostToDevice) );
-  GPU_ASSERT( cudaMemcpy( d_sk, sk, keypair_count * KYBER_SECRETKEYBYTES, cudaMemcpyHostToDevice) );
+  std::vector<cudaStream_t> streams( n_streams);
+  for ( uint32_t i = 0; i < n_streams; i++ )
+  {
+    GPU_ASSERT( cudaStreamCreate( &streams[i]));
+  }
 
-  printf( "dec gridDim (%d %d %d), blockDim (%d %d %d)\n", grid_dim.x, grid_dim.y, grid_dim.z, block_dim.x, block_dim.y, block_dim.z);
-  crypto_kem_dec_kernel<<<grid_dim, block_dim>>>( d_ss, d_ct, d_sk, keypair_count);
+  auto getNKeysForGrid = [=]( uint32_t i) -> uint32_t
+  {
+    if ( (tail_keypairs != 0) && (i == n_streams - 1) )
+    {
+      return tail_keypairs;
+    } else {
+      return kKeysPerGrid;
+    }
+  };
 
-  GPU_ASSERT( cudaGetLastError() );
+  // Launch copy for arguments of every stream.
+  for ( uint32_t i = 0; i < n_streams; i++ )
+  {
+    uint32_t offset = i * kKeysPerGrid;
+    uint32_t n_cur = getNKeysForGrid( i);
 
-  GPU_ASSERT( cudaMemcpy( ss, d_ss, keypair_count * KYBER_SSBYTES, cudaMemcpyDeviceToHost) );
+    const uint8_t *h_grid_ct = ct   + offset * KYBER_CIPHERTEXTBYTES;
+    const uint8_t *h_grid_sk = sk   + offset * KYBER_SECRETKEYBYTES;
+    uint8_t       *d_grid_ct = d_ct + offset * KYBER_CIPHERTEXTBYTES;
+    uint8_t       *d_grid_sk = d_sk + offset * KYBER_SECRETKEYBYTES;
+
+    GPU_ASSERT( cudaMemcpyAsync( d_grid_ct,
+                                 h_grid_ct,
+                                 n_cur * KYBER_CIPHERTEXTBYTES,
+                                 cudaMemcpyHostToDevice,
+                                 streams[i]));
+
+    GPU_ASSERT( cudaMemcpyAsync( d_grid_sk,
+                                 h_grid_sk,
+                                 n_cur * KYBER_SECRETKEYBYTES,
+                                 cudaMemcpyHostToDevice,
+                                 streams[i]));
+  }
+
+  // Launch all grids in streams.
+  for ( uint32_t i = 0; i < n_streams; i++ )
+  {
+    uint32_t offset = i * kKeysPerGrid;
+    uint32_t n_cur = getNKeysForGrid( i);
+
+    uint8_t *d_grid_ss = d_ss + offset * KYBER_SSBYTES;
+    uint8_t *d_grid_ct = d_ct + offset * KYBER_CIPHERTEXTBYTES;
+    uint8_t *d_grid_sk = d_sk + offset * KYBER_SECRETKEYBYTES;
+
+    printf( "dec gridDim (%u), blockDim (%u), stream launch (%u), #keys on grid (%u keys), offset (%u keys)\n",
+            kBlocksPerGrid, kThreadsPerBlock, i, n_cur, offset);
+    crypto_kem_dec_kernel<<<kBlocksPerGrid, kThreadsPerBlock, 0, streams[i]>>>(
+        d_grid_ss,
+        d_grid_ct,
+        d_grid_sk,
+        n_cur
+    );
+  }
+
+  // Launch copy for result of every stream.
+  for ( uint32_t i = 0; i < n_streams; i++ )
+  {
+    uint32_t offset = i * kKeysPerGrid;
+    uint32_t n_cur = getNKeysForGrid( i);
+
+    uint8_t *h_grid_ss = ss   + offset * KYBER_SSBYTES;
+    uint8_t *d_grid_ss = d_ss + offset * KYBER_SSBYTES;
+
+    GPU_ASSERT( cudaMemcpyAsync( h_grid_ss,
+                                 d_grid_ss,
+                                 n_cur * KYBER_SSBYTES,
+                                 cudaMemcpyDeviceToHost,
+                                 streams[i]));
+  }
+
+  // Wait for all streams.
+  GPU_ASSERT( cudaDeviceSynchronize());
+
+  for ( uint32_t i = 0; i < n_streams; i++ )
+  {
+    GPU_ASSERT( cudaStreamDestroy( streams[i]));
+  }
+
   cudaFree( d_ss);
   cudaFree( d_ct);
   cudaFree( d_sk);

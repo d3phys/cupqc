@@ -21,13 +21,9 @@
 **************************************************/
 __device__ static uint64_t
 load64(const uint8_t x[8]) {
-  unsigned int i;
-  uint64_t r = 0;
-
-  for(i=0;i<8;i++)
-    r |= (uint64_t)x[i] << 8*i;
-
-  return r;
+//  uint64_t r = 0;
+//  memcpy( &r, x, sizeof( uint64_t));
+    return *((const uint64_t*) x);
 }
 
 /*************************************************
@@ -40,11 +36,38 @@ load64(const uint8_t x[8]) {
 **************************************************/
 __device__ static void
 store64(uint8_t x[8], uint64_t u) {
-  unsigned int i;
-
-  for(i=0;i<8;i++)
-    x[i] = u >> 8*i;
+    *((uint64_t*) x) = u;
+// memcpy( x, &u, sizeof( uint64_t));
 }
+
+/* Keccak round constants */
+__constant__ const uint64_t
+KeccakF_RoundConstants[NROUNDS] = {
+    (uint64_t)0x0000000000000001ULL,
+    (uint64_t)0x0000000000008082ULL,
+    (uint64_t)0x800000000000808aULL,
+    (uint64_t)0x8000000080008000ULL,
+    (uint64_t)0x000000000000808bULL,
+    (uint64_t)0x0000000080000001ULL,
+    (uint64_t)0x8000000080008081ULL,
+    (uint64_t)0x8000000000008009ULL,
+    (uint64_t)0x000000000000008aULL,
+    (uint64_t)0x0000000000000088ULL,
+    (uint64_t)0x0000000080008009ULL,
+    (uint64_t)0x000000008000000aULL,
+    (uint64_t)0x000000008000808bULL,
+    (uint64_t)0x800000000000008bULL,
+    (uint64_t)0x8000000000008089ULL,
+    (uint64_t)0x8000000000008003ULL,
+    (uint64_t)0x8000000000008002ULL,
+    (uint64_t)0x8000000000000080ULL,
+    (uint64_t)0x000000000000800aULL,
+    (uint64_t)0x800000008000000aULL,
+    (uint64_t)0x8000000080008081ULL,
+    (uint64_t)0x8000000000008080ULL,
+    (uint64_t)0x0000000080000001ULL,
+    (uint64_t)0x8000000080008008ULL
+};
 
 
 /*************************************************
@@ -57,35 +80,6 @@ store64(uint8_t x[8], uint64_t u) {
 __device__ static void
 KeccakF1600_StatePermute(uint64_t state[25])
 {
-        // FIXME: CUDA does not allow global arrays.
-        /* Keccak round constants */
-        const uint64_t KeccakF_RoundConstants[NROUNDS] = {
-          (uint64_t)0x0000000000000001ULL,
-          (uint64_t)0x0000000000008082ULL,
-          (uint64_t)0x800000000000808aULL,
-          (uint64_t)0x8000000080008000ULL,
-          (uint64_t)0x000000000000808bULL,
-          (uint64_t)0x0000000080000001ULL,
-          (uint64_t)0x8000000080008081ULL,
-          (uint64_t)0x8000000000008009ULL,
-          (uint64_t)0x000000000000008aULL,
-          (uint64_t)0x0000000000000088ULL,
-          (uint64_t)0x0000000080008009ULL,
-          (uint64_t)0x000000008000000aULL,
-          (uint64_t)0x000000008000808bULL,
-          (uint64_t)0x800000000000008bULL,
-          (uint64_t)0x8000000000008089ULL,
-          (uint64_t)0x8000000000008003ULL,
-          (uint64_t)0x8000000000008002ULL,
-          (uint64_t)0x8000000000000080ULL,
-          (uint64_t)0x000000000000800aULL,
-          (uint64_t)0x800000008000000aULL,
-          (uint64_t)0x8000000080008081ULL,
-          (uint64_t)0x8000000000008080ULL,
-          (uint64_t)0x0000000080000001ULL,
-          (uint64_t)0x8000000080008008ULL
-        };
-
         int round;
 
         uint64_t Aba, Abe, Abi, Abo, Abu;

@@ -20,6 +20,7 @@ extern "C"
 void randombytes(uint8_t *out, size_t outlen) {}
 }
 
+int pqcrystals_init();
 int pqcrystals_kyber768_cuda_keypair(uint8_t *pk, uint8_t *sk, const uint8_t *coins, uint32_t keypair_count);
 int pqcrystals_kyber768_cuda_enc(uint8_t *ct, uint8_t *ss, const uint8_t *pk, const uint8_t *coins, uint32_t keypair_count);
 int pqcrystals_kyber768_cuda_dec(uint8_t *ss, const uint8_t *ct, const uint8_t *sk, uint32_t keypair_count);
@@ -27,6 +28,11 @@ int pqcrystals_kyber768_cuda_dec(uint8_t *ss, const uint8_t *ct, const uint8_t *
 using KyberKeyPair = int( uint8_t *pk, uint8_t *sk, const uint8_t *coins, uint32_t keypair_count);
 using KyberEnc = int( uint8_t *ct, uint8_t *ss, const uint8_t *pk, const uint8_t *coins, uint32_t keypair_count);
 using KyberDec = int( uint8_t *ss, const uint8_t *ct, const uint8_t *sk, uint32_t keypair_count);
+
+int kyberCudaInit()
+{
+    return pqcrystals_init();
+}
 
 int kyberCudaKeyPair( uint8_t *pk, uint8_t *sk, const uint8_t *coins, uint32_t keypair_count)
 {
@@ -275,6 +281,7 @@ int main(int argc, const char *argv[])
         }
     }
 
+    kyberCudaInit();
     for ( auto &&test : tests )
     {
         int result = test(nKeys);
