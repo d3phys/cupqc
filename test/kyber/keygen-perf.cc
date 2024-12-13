@@ -14,7 +14,8 @@
 
 extern "C"
 {
-//#include "../../ref/kyber/ref/api.h"
+
+#include "../../ref/kyber/ref/api.h"
 #include "../../ref/kyber/avx2/api.h"
 
 void randombytes(uint8_t *out, size_t outlen) {}
@@ -40,7 +41,7 @@ int kyberCudaKeyPair( uint8_t *pk, uint8_t *sk, const uint8_t *coins, uint32_t k
     return 0;
 }
 
-int kyberRefKeyPair( uint8_t *pk, uint8_t *sk, const uint8_t *coins, uint32_t keypair_count)
+int kyberAvx2KeyPair( uint8_t *pk, uint8_t *sk, const uint8_t *coins, uint32_t keypair_count)
 {
     for ( uint32_t i = 0; i < keypair_count; ++i )
     {
@@ -53,13 +54,26 @@ int kyberRefKeyPair( uint8_t *pk, uint8_t *sk, const uint8_t *coins, uint32_t ke
     return 0;
 }
 
+int kyberRefKeyPair( uint8_t *pk, uint8_t *sk, const uint8_t *coins, uint32_t keypair_count)
+{
+    for ( uint32_t i = 0; i < keypair_count; ++i )
+    {
+        uint8_t* pub = (pk + kyberPublicKeyBytes * i);
+        uint8_t* sec = (sk + kyberSecretKeyBytes * i);
+        const uint8_t* cns = (coins + kyberKeyPairCoinBytes * i);
+        pqcrystals_kyber768_ref_keypair_derand( pub, sec, cns);
+    }
+
+    return 0;
+}
+
 int kyberCudaEnc( uint8_t *ct, uint8_t *ss, const uint8_t *pk, const uint8_t *coins, uint32_t keypair_count)
 {
     pqcrystals_kyber768_cuda_enc( ct, ss, pk, coins, keypair_count);
     return 0;
 }
 
-int kyberRefEnc( uint8_t *ct, uint8_t *ss, const uint8_t *pk, const uint8_t *coins, uint32_t keypair_count)
+int kyberAvx2Enc( uint8_t *ct, uint8_t *ss, const uint8_t *pk, const uint8_t *coins, uint32_t keypair_count)
 {
     for ( uint32_t i = 0; i < keypair_count; ++i )
     {
@@ -73,9 +87,36 @@ int kyberRefEnc( uint8_t *ct, uint8_t *ss, const uint8_t *pk, const uint8_t *coi
     return 0;
 }
 
+int kyberRefEnc( uint8_t *ct, uint8_t *ss, const uint8_t *pk, const uint8_t *coins, uint32_t keypair_count)
+{
+    for ( uint32_t i = 0; i < keypair_count; ++i )
+    {
+        uint8_t* cph = (ct + kyberCipherTextBytes * i);
+        uint8_t* shr = (ss + kyberBytes * i);
+        const uint8_t* pub = (pk + kyberPublicKeyBytes * i);
+        const uint8_t* cns = (coins + kyberEncCoinBytes * i);
+        pqcrystals_kyber768_ref_enc_derand( cph, shr, pub, cns);
+    }
+
+    return 0;
+}
+
 int kyberCudaDec( uint8_t *ss, const uint8_t *ct, const uint8_t *sk, uint32_t keypair_count)
 {
     pqcrystals_kyber768_cuda_dec( ss, ct, sk, keypair_count);
+    return 0;
+}
+
+int kyberAvx2Dec( uint8_t *ss, const uint8_t *ct, const uint8_t *sk, uint32_t keypair_count)
+{
+    for ( uint32_t i = 0; i < keypair_count; ++i )
+    {
+        uint8_t* shr = (ss + kyberBytes * i);
+        const uint8_t* cph = (ct + kyberCipherTextBytes * i);
+        const uint8_t* sec = (sk + kyberSecretKeyBytes * i);
+        pqcrystals_kyber768_avx2_dec( shr, cph, sec);
+    }
+
     return 0;
 }
 
@@ -86,7 +127,7 @@ int kyberRefDec( uint8_t *ss, const uint8_t *ct, const uint8_t *sk, uint32_t key
         uint8_t* shr = (ss + kyberBytes * i);
         const uint8_t* cph = (ct + kyberCipherTextBytes * i);
         const uint8_t* sec = (sk + kyberSecretKeyBytes * i);
-        pqcrystals_kyber768_avx2_dec( shr, cph, sec);
+        pqcrystals_kyber768_ref_dec( shr, cph, sec);
     }
 
     return 0;
@@ -155,7 +196,6 @@ std::unique_ptr<uint8_t[]>
 runKyberDec(const uint8_t* cipherTexts, const uint8_t* secretKeys, int nKeys, KyberDec kyberDec, double* duration = nullptr) {
     auto sharedSecrets = std::make_unique<uint8_t[]>( kyberBytes * nKeys);
 
-    // Alice generates a public key
     auto startRef = std::chrono::high_resolution_clock::now();
     kyberDec( sharedSecrets.get(), cipherTexts, secretKeys, nKeys);
     auto endRef   = std::chrono::high_resolution_clock::now();
@@ -172,12 +212,15 @@ runKyberDec(const uint8_t* cipherTexts, const uint8_t* secretKeys, int nKeys, Ky
 int testKeygen(int nKeys)
 {
     double durRef = 0;
+    double durAvx2 = 0;
     double durCuda = 0;
 
     auto [publicKeysRef, secretKeysRef] = runKyberKeyPair(nKeys, kyberRefKeyPair, &durRef);
+    auto [publicKeysAvx2, secretKeysAvx2] = runKyberKeyPair(nKeys, kyberAvx2KeyPair, &durAvx2);
     auto [publicKeysCuda, secretKeysCuda] = runKyberKeyPair(nKeys, kyberCudaKeyPair, &durCuda);
 
-    std::cout << "Ref. time: " << durRef << "s\n";
+    std::cout << "Ref. time: " << durRef  << "s\n";
+    std::cout << "Avx2 time: " << durAvx2 << "s\n";
     std::cout << "Cuda time: " << durCuda << "s\n";
 
     if ( memcmp( publicKeysRef.get(), publicKeysCuda.get(), nKeys * kyberPublicKeyBytes) ) 
@@ -197,14 +240,17 @@ int testKeygen(int nKeys)
 
 int testEnc(int nKeys) {
     double durRef = 0;
+    double durAvx2 = 0;
     double durCuda = 0;
 
-    auto [publicKeysRef, _] = runKyberKeyPair(nKeys, kyberRefKeyPair);
+    auto [publicKeysCuda, _] = runKyberKeyPair(nKeys, kyberRefKeyPair);
 
-    auto [cipherTextsRef, sharedSecretsRef] = runKyberEnc( publicKeysRef.get(), nKeys, kyberRefEnc, &durRef);
-    auto [cipherTextsCuda, sharedSecretsCuda] = runKyberEnc( publicKeysRef.get(), nKeys, kyberCudaEnc, &durCuda);
+    auto [cipherTextsRef, sharedSecretsRef]   = runKyberEnc( publicKeysCuda.get(), nKeys, kyberRefEnc, &durRef);
+    auto [cipherTextsAvx2, sharedSecretsAvx2] = runKyberEnc( publicKeysCuda.get(), nKeys, kyberAvx2Enc, &durAvx2);
+    auto [cipherTextsCuda, sharedSecretsCuda] = runKyberEnc( publicKeysCuda.get(), nKeys, kyberCudaEnc, &durCuda);
 
-    std::cout << "Ref. time: " << durRef << "s\n";
+    std::cout << "Ref. time: " << durRef  << "s\n";
+    std::cout << "Avx2 time: " << durAvx2 << "s\n";
     std::cout << "Cuda time: " << durCuda << "s\n";
 
     if ( memcmp( cipherTextsRef.get(), cipherTextsCuda.get(), nKeys * kyberCipherTextBytes) ) 
@@ -224,15 +270,18 @@ int testEnc(int nKeys) {
 
 int testDec(int nKeys) {
     double durRef = 0;
+    double durAvx2 = 0;
     double durCuda = 0;
 
-    auto [publicKeysRef, secretKeysRef] = runKyberKeyPair(nKeys, kyberRefKeyPair);
-    auto [cipherTextsRef, _] = runKyberEnc( publicKeysRef.get(), nKeys, kyberRefEnc);
+    auto [publicKeysCuda, secretKeysCuda] = runKyberKeyPair(nKeys, kyberRefKeyPair);
+    auto [cipherTextsCuda, _] = runKyberEnc( publicKeysCuda.get(), nKeys, kyberRefEnc);
 
-    auto sharedSecretsRef = runKyberDec( cipherTextsRef.get(), secretKeysRef.get(), nKeys, kyberRefDec, &durRef);
-    auto sharedSecretsCuda = runKyberDec( cipherTextsRef.get(), secretKeysRef.get(), nKeys, kyberCudaDec, &durCuda);
+    auto sharedSecretsRef  = runKyberDec( cipherTextsCuda.get(), secretKeysCuda.get(), nKeys, kyberRefDec,  &durRef);
+    auto sharedSecretsAvx2 = runKyberDec( cipherTextsCuda.get(), secretKeysCuda.get(), nKeys, kyberAvx2Dec, &durAvx2);
+    auto sharedSecretsCuda = runKyberDec( cipherTextsCuda.get(), secretKeysCuda.get(), nKeys, kyberCudaDec, &durCuda);
 
-    std::cout << "Ref. time: " << durRef << "s\n";
+    std::cout << "Ref. time: " << durRef  << "s\n";
+    std::cout << "Avx2 time: " << durAvx2 << "s\n";
     std::cout << "Cuda time: " << durCuda << "s\n";
 
     if ( memcmp( sharedSecretsRef.get(), sharedSecretsCuda.get(), nKeys * kyberBytes) ) 
